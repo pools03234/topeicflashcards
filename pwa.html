@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SRS 單字學習卡 App</title>
+    <!-- PWA 與手機主畫面支援 -->
+    <link rel="manifest" id="manifest-placeholder">
+    <meta name="theme-color" content="#0f172a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="SRS單字卡">
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/3389/3389081.png">
+
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome 圖示庫 CDN -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        
+        /* 3D 卡片翻轉動畫效果 */
+        .perspective-1000 { perspective: 1000px; }
+        .transform-style-3d { transform-style: preserve-3d; }
+        .backface-hidden { backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+        .rotate-y-180 { transform: rotateY(180deg); }
+        .transition-transform-400 { transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
+
+        /* 隱藏滾動條但保持可滾動機制 */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col items-center justify-between p-3 md:p-6 select-none overflow-x-hidden">
+
+    <!-- 1. 頂部一體化資訊與控制欄 -->
+    <header class="w-full max-w-2xl bg-slate-800/90 border border-slate-700/60 rounded-2xl p-3 shadow-xl backdrop-blur-md mb-4 transition-all">
+        <div class="flex flex-wrap items-center justify-between gap-2 text-xs md:text-sm font-medium">
+            
+            <!-- SRS 點擊統計 (A: Again, H: Hard, G: Good, E: Easy) -->
+            <div class="flex items-center gap-1.5 bg-slate-900/60 px-2.5 py-1.5 rounded-lg border border-slate-700/50">
+                <span class="text-rose-400 font-bold" title="Again">A:<span id="stat-A" class="ml-0.5 text-slate-200">0</span></span>
+                <span class="text-amber-400 font-bold ml-1" title="Hard">H:<span id="stat-H" class="ml-0.5 text-slate-200">0</span></span>
+                <span class="text-emerald-400 font-bold ml-1" title="Good">G:<span id="stat-G" class="ml-0.5 text-slate-200">0</span></span>
+                <span class="text-blue-400 font-bold ml-1" title="Easy">E:<span id="stat-E" class="ml-0.5 text-slate-200">0</span></span>
+            </div>
+
+            <!-- 學習進度條與數量 (剩下/總數) -->
+            <div class="flex-1 min-w-[120px] flex items-center gap-2 px-1">
+                <div class="w-full bg-slate-700/60 rounded-full h-2.5 overflow-hidden">
+                    <div id="progress-bar" class="bg-gradient-to-r from-blue-500 to-emerald-400 h-full w-0 transition-all duration-300"></div>
+                </div>
+                <span id="card-counter" class="text-xs font-mono font-bold text-slate-300 whitespace-nowrap">0/0</span>
+            </div>
+
+            <!-- 功能按鈕區：語音選單、洗牌、說明 info、匯入 CSV -->
+            <div class="flex items-center gap-1.5">
+                <!-- PWA 手機安裝 App 按鈕 (偵測到支援時自動顯示) -->
+                <button id="btn-install" class="hidden p-1.5 px-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg border border-emerald-500 cursor-pointer transition active:scale-95 flex items-center gap-1 text-xs font-semibold animate-pulse" title="安裝 App 到手機桌面">
+                    <i class="fa-solid fa-download"></i>
+                    <span class="hidden sm:inline">安裝 App</span>
+                </button>
+
+                <!-- 語音選單 -->
+                <select id="voice-select" class="hidden max-w-[110px] sm:max-w-[140px] bg-slate-700 text-slate-200 text-xs rounded-lg px-2 py-1.5 border border-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-400 truncate cursor-pointer">
+                    <option value="">預設語音</option>
+                </select>
+
+                <!-- 重新洗牌按鈕 -->
+                <button id="btn-shuffle" class="p-1.5 px-2 bg-slate-700/70 hover:bg-slate-600 text-slate-300 rounded-lg border border-slate-600/60 transition active:scale-95" title="隨機洗牌">
+                    <i class="fa-solid fa-shuffle text-sm"></i>
+                </button>
+
+                <!-- 說明 (Info) 按鈕 -->
+                <button id="btn-info" class="p-1.5 px-2 bg-slate-700/70 hover:bg-slate-600 text-slate-300 rounded-lg border border-slate-600/60 transition active:scale-95" title="快捷鍵與說明">
+                    <i class="fa-solid fa-circle-info text-sm"></i>
+                </button>
+
+                <!-- 匯入 CSV 按鈕 -->
+                <label class="p-1.5 px-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg border border-blue-500 cursor-pointer transition active:scale-95 flex items-center gap-1 text-xs font-semibold">
+                    <i class="fa-solid fa-file-csv"></i>
+                    <span class="hidden sm:inline">匯入</span>
+                    <input type="file" id="csv-file-input" accept=".csv" class="hidden">
+                </label>
+            </div>
+        </div>
+    </header>
+
+<!-- 自動恢復/儲存進度的 Toast 提示訊息 -->
+<div id="toast" class="fixed top-16 left-1/2 -translate-x-1/2 bg-blue-600/90 text-white text-xs font-semibold px-4 py-2 rounded-full shadow-lg border border-blue-400/50 backdrop-blur-md transition-all duration-300 opacity-0 pointer-events-none z-50 flex items-center gap-2">
+    <i class="fa-solid fa-cloud-arrow-up"></i>
+    <span id="toast-text">已自動恢復上次學習進度</span>
+</div>
+
+<!-- 2. 主卡片展示區 -->
+    <main class="w-full max-w-xl flex-1 flex flex-col justify-center items-center my-auto perspective-1000 py-2">
+        <div id="flashcard" class="relative w-full aspect-[4/5] max-h-[500px] cursor-pointer transform-style-3d transition-transform-400 shadow-2xl rounded-3xl">
+            
+            <!-- 正面 (Front) -->
+            <div id="card-front" class="absolute inset-0 w-full h-full bg-slate-800 border-2 border-slate-700/80 rounded-3xl p-6 flex flex-col items-center justify-center backface-hidden shadow-inner text-center">
+                <span class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-6">Word Flashcard</span>
+                
+                <div class="flex items-center justify-center gap-4 my-auto px-4">
+                    <h1 id="front-word" class="text-4xl sm:text-5xl font-extrabold text-white tracking-wide break-words">Loading...</h1>
+                    <button id="btn-speak-front" class="p-3 text-blue-400 hover:text-blue-300 hover:bg-blue-950/40 rounded-full transition active:scale-90" title="朗讀單字 (Enter)">
+                        <i class="fa-solid fa-volume-high text-2xl sm:text-3xl"></i>
+                    </button>
+                </div>
+
+                <div class="mt-auto text-xs text-slate-500 flex items-center gap-1.5">
+                    <i class="fa-solid fa-hand-pointer"></i> 點擊卡片或按下 <kbd class="px-1.5 py-0.5 bg-slate-700 text-slate-300 rounded border border-slate-600">Space</kbd> 翻面
+                </div>
+            </div>
+
+            <!-- 背面 (Back) -->
+            <div id="card-back" class="absolute inset-0 w-full h-full bg-slate-850 border-2 border-slate-700/80 rounded-3xl p-4 sm:p-5 flex flex-col justify-between backface-hidden rotate-y-180 shadow-inner overflow-hidden">
+                
+                <!-- 頂部情境聯想圖片 -->
+                <div class="relative w-full h-36 sm:h-44 bg-slate-900 rounded-2xl overflow-hidden border border-slate-700/60 flex-shrink-0 flex items-center justify-center">
+                    <img id="back-image" src="" alt="Mnemonic Image" class="w-full h-full object-cover opacity-0 transition-opacity duration-300">
+                    <div id="image-loader" class="absolute inset-0 flex items-center justify-center bg-slate-900/80 text-blue-400">
+                        <i class="fa-solid fa-spinner fa-spin text-2xl"></i>
+                    </div>
+                </div>
+
+                <!-- 中間詳細內容 (包含：詞性、翻譯、詞性變化、搭配詞、例句) -->
+                <div id="back-details" class="my-2 flex-1 flex flex-col justify-center space-y-2 text-slate-200 text-sm leading-tight overflow-hidden">
+                    <!-- 由 JavaScript 動態生成解析後的 CSV 第二欄內容 -->
+                </div>
+
+                <!-- 底部快捷鍵提示 -->
+                <div class="pt-1 text-center text-[11px] text-slate-500 flex items-center justify-center gap-2">
+                    <span>按 <kbd class="px-1 py-0.5 bg-slate-700 text-slate-300 rounded border border-slate-600">Enter</kbd> 朗讀例句</span>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- 3. 底部 SRS 四鍵按鈕 (極簡版，翻面後啟用) -->
+    <footer class="w-full max-w-xl mt-3 mb-1">
+        <div id="srs-controls" class="grid grid-cols-4 gap-2 opacity-40 pointer-events-none transition-opacity duration-200">
+            <button onclick="handleSRS('Again')" class="py-3 bg-rose-600/90 hover:bg-rose-500 active:bg-rose-700 text-white font-bold text-sm sm:text-base rounded-xl shadow-lg border border-rose-500/50 transition active:scale-95 flex items-center justify-center">
+                Again
+            </button>
+            <button onclick="handleSRS('Hard')" class="py-3 bg-amber-600/90 hover:bg-amber-500 active:bg-amber-700 text-white font-bold text-sm sm:text-base rounded-xl shadow-lg border border-amber-500/50 transition active:scale-95 flex items-center justify-center">
+                Hard
+            </button>
+            <button onclick="handleSRS('Good')" class="py-3 bg-emerald-600/90 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-sm sm:text-base rounded-xl shadow-lg border border-emerald-500/50 transition active:scale-95 flex items-center justify-center">
+                Good
+            </button>
+            <button onclick="handleSRS('Easy')" class="py-3 bg-blue-600/90 hover:bg-blue-500 active:bg-blue-700 text-white font-bold text-sm sm:text-base rounded-xl shadow-lg border border-blue-500/50 transition active:scale-95 flex items-center justify-center">
+                Easy
+            </button>
+        </div>
+    </footer>
+
+    <!-- 4. 說明 (Info) 視窗 -->
+    <div id="modal-info" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div class="flex justify-between items-center border-b border-slate-700 pb-3">
+                <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                    <i class="fa-solid fa-circle-question text-blue-400"></i> 操作與快捷鍵說明
+                </h3>
+                <button id="btn-close-info" class="text-slate-400 hover:text-white p-1">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            
+            <div class="space-y-3 text-xs sm:text-sm text-slate-300">
+                <div>
+                    <h4 class="font-semibold text-blue-300 mb-1">⌨️ 鍵盤快捷鍵：</h4>
+                    <ul class="space-y-1 list-disc list-inside bg-slate-900/60 p-2.5 rounded-lg border border-slate-700/50">
+                        <li><kbd class="px-1.5 py-0.5 bg-slate-700 rounded text-slate-200">Space</kbd>：翻轉卡片正面/背面</li>
+                        <li><kbd class="px-1.5 py-0.5 bg-slate-700 rounded text-slate-200">Enter</kbd>：正面朗讀單字 / 背面朗讀例句</li>
+                        <li><kbd class="px-1.5 py-0.5 bg-slate-700 rounded text-slate-200">1</kbd> ~ <kbd class="px-1.5 py-0.5 bg-slate-700 rounded text-slate-200">4</kbd>：背面選擇 Again / Hard / Good / Easy</li>
+                        <li><kbd class="px-1.5 py-0.5 bg-slate-700 rounded text-slate-200">Esc</kbd>：關閉對話框</li>
+                    </ul>
+                </div>
+
+                <div>
+                    <h4 class="font-semibold text-blue-300 mb-1">🧠 SRS 間隔重複機制：</h4>
+                    <ul class="space-y-1 text-slate-300">
+                        <li><strong class="text-rose-400">Again [1]</strong>：即刻重來（插至佇列第 2 位置）</li>
+                        <li><strong class="text-amber-400">Hard [2]</strong>：感到困難（插至佇列中間位置）</li>
+                        <li><strong class="text-emerald-400">Good [3]</strong>：掌握良好（移至佇列最後端）</li>
+                        <li><strong class="text-blue-400">Easy [4]</strong>：完美掌握（本次練習直接移除卡片）</li>
+                    </ul>
+                </div>
+
+                <!-- 手機 App 下載/安裝說明 -->
+                <div class="border-t border-slate-700/80 pt-2.5">
+                    <h4 class="font-semibold text-emerald-300 mb-1 flex items-center gap-1">
+                        <i class="fa-solid fa-mobile-screen-button"></i> 如何下載/安裝到手機桌面：
+                    </h4>
+                    <div class="bg-slate-900/60 p-2.5 rounded-lg border border-slate-700/50 space-y-1.5 text-xs">
+                        <p><strong class="text-slate-200">iOS (iPhone/iPad):</strong> 用 Safari 開啟 ➔ 點擊下方「分享 <i class="fa-solid fa-share-from-square"></i>」➔ 選擇「加入主畫面 <i class="fa-solid fa-square-plus"></i>」</p>
+                        <p><strong class="text-slate-200">Android (安卓):</strong> 用 Chrome 開啟 ➔ 點擊上方「<i class="fa-solid fa-download text-emerald-400"></i> 安裝 App」按鈕，或點擊右上方選單「加到主畫面 / 安裝應用程式」</p>
+                    </div>
+                </div>
+            </div>
+
+            <button id="btn-confirm-info" class="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-xl transition">
+                知道了
+            </button>
+        </div>
+    </div>
+
+    <!-- 5. 練習完成結算對話框 -->
+    <div id="modal-complete" class="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-slate-800 border border-slate-700 rounded-3xl max-w-sm w-full p-6 shadow-2xl text-center space-y-5">
+            <div class="w-16 h-16 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mx-auto text-3xl border border-emerald-500/40">
+                <i class="fa-solid fa-trophy"></i>
+            </div>
+            
+            <div>
+                <h2 class="text-2xl font-black text-white">完成練習！</h2>
+                <p class="text-xs text-slate-400 mt-1">你已經掌握了本次複習的所有單字。</p>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2 bg-slate-900/80 p-3 rounded-2xl border border-slate-700/60 text-xs font-semibold">
+                <div class="p-2 bg-rose-950/30 border border-rose-800/40 rounded-xl text-rose-300">
+                    Again: <span id="summary-A" class="font-mono text-slate-100">0</span>
+                </div>
+                <div class="p-2 bg-amber-950/30 border border-amber-800/40 rounded-xl text-amber-300">
+                    Hard: <span id="summary-H" class="font-mono text-slate-100">0</span>
+                </div>
+                <div class="p-2 bg-emerald-950/30 border border-emerald-800/40 rounded-xl text-emerald-300">
+                    Good: <span id="summary-G" class="font-mono text-slate-100">0</span>
+                </div>
+                <div class="p-2 bg-blue-950/30 border border-blue-800/40 rounded-xl text-blue-300">
+                    Easy: <span id="summary-E" class="font-mono text-slate-100">0</span>
+                </div>
+            </div>
+
+            <button id="btn-restart" class="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold rounded-2xl shadow-lg transition active:scale-95">
+                <i class="fa-solid fa-rotate-right mr-1.5"></i> 重新開始練習
+            </button>
+        </div>
+    </div>
+
+    <!-- 6. 應用程式 JavaScript 邏輯 -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- 預設示範資料 (當使用者未下載或匯入 CSV 時直接展示) ---
+        const defaultCSVData = `resilient,"[adj.] 有彈性的；能迅速恢復的
+[詞性變化] resilience (n.)
+[搭配詞] resilient market, resilient spirit
+[例句] She is resilient enough to handle any difficult situation."
+innovative,"[adj.] 創新的；革新的
+[詞性變化] innovate (v.), innovation (n.)
+[搭配詞] innovative technology, innovative idea
+[例句] The company is famous for introducing innovative products."
+empathy,"[n.] 同理心；共鳴
+[詞性變化] empathetic (adj.)
+[搭配詞] show empathy, deep empathy
+[例句] Having empathy allows us to connect deeply with others."
+pragmatic,"[adj.] 務實的；重實效的
+[詞性變化] pragmatism (n.)
+[搭配詞] pragmatic approach, pragmatic solution
+[例句] We need a pragmatic approach to solve this complex issue."
+ubiquitous,"[adj.] 無所不在的；普遍存在的
+[詞性變化] ubiquity (n.)
+[搭配詞] ubiquitous presence, ubiquitous smartphones
+[例句] Mobile phones have become ubiquitous in modern society."`;
+
+        // --- 核心狀態 ---
+        let originalCards = [];  // 原始卡片清單
+        let queue = [];          // 目前複習佇列
+        let isFlipped = false;    // 正反面狀態
+        let stats = { A: 0, H: 0, G: 0, E: 0 };
+        const imageCache = new Map(); // 圖片快取機制
+
+        // --- 雲端儲存與自動備份續學邏輯 ---
+        let db = null;
+        let auth = null;
+
+        async function initFirebase() {
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'flashcard-app';
+            const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+
+            if (!firebaseConfig) return false;
+
+            try {
+                const app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                if (auth.currentUser) {
+                    return await loadSavedProgress();
+                }
+            } catch (e) {
+                console.warn("儲存庫初始化或驗證失敗:", e);
+            }
+            return false;
+        }
+
+        async function saveProgress() {
+            if (!db || !auth || !auth.currentUser) return;
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'flashcard-app';
+            const uid = auth.currentUser.uid;
+            const docRef = doc(db, 'artifacts', appId, 'users', uid, 'progress', 'currentSession');
+
+            try {
+                await setDoc(docRef, {
+                    originalCards: originalCards,
+                    queue: queue,
+                    stats: stats,
+                    updatedAt: Date.now()
+                });
+            } catch (err) {
+                console.warn("自動儲存進度失敗:", err);
+            }
+        }
+
+        async function loadSavedProgress() {
+            if (!db || !auth || !auth.currentUser) return false;
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'flashcard-app';
+            const uid = auth.currentUser.uid;
+            const docRef = doc(db, 'artifacts', appId, 'users', uid, 'progress', 'currentSession');
+
+            try {
+                const docSnap = await getDoc(docRef);
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    if (data && Array.isArray(data.originalCards) && data.originalCards.length > 0 && Array.isArray(data.queue) && data.queue.length > 0) {
+                        originalCards = data.originalCards;
+                        queue = data.queue;
+                        stats = data.stats || { A: 0, H: 0, G: 0, E: 0 };
+                        
+                        showToast("已自動恢復上次中斷的學習進度！");
+                        renderCard();
+                        return true;
+                    }
+                }
+            } catch (err) {
+                console.warn("讀取歷史進度失敗:", err);
+            }
+            return false;
+        }
+
+        async function clearSavedProgress() {
+            if (!db || !auth || !auth.currentUser) return;
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'flashcard-app';
+            const uid = auth.currentUser.uid;
+            const docRef = doc(db, 'artifacts', appId, 'users', uid, 'progress', 'currentSession');
+
+            try {
+                await deleteDoc(docRef);
+            } catch (err) {
+                console.warn("清除進度失敗:", err);
+            }
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            const toastText = document.getElementById('toast-text');
+            if (!toast || !toastText) return;
+            toastText.textContent = msg;
+            toast.classList.remove('opacity-0', 'pointer-events-none');
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'pointer-events-none');
+            }, 3000);
+        }
+
+        // --- DOM 元素引用 ---
+        const flashcard = document.getElementById('flashcard');
+        const frontWord = document.getElementById('front-word');
+        const backDetails = document.getElementById('back-details');
+        const backImage = document.getElementById('back-image');
+        const imageLoader = document.getElementById('image-loader');
+        const srsControls = document.getElementById('srs-controls');
+        
+        const progressBar = document.getElementById('progress-bar');
+        const cardCounter = document.getElementById('card-counter');
+        const statA = document.getElementById('stat-A');
+        const statH = document.getElementById('stat-H');
+        const statG = document.getElementById('stat-G');
+        const statE = document.getElementById('stat-E');
+        
+        const voiceSelect = document.getElementById('voice-select');
+        const btnSpeakFront = document.getElementById('btn-speak-front');
+        const csvFileInput = document.getElementById('csv-file-input');
+
+        const btnShuffle = document.getElementById('btn-shuffle');
+        const modalInfo = document.getElementById('modal-info');
+        const btnInfo = document.getElementById('btn-info');
+        const btnCloseInfo = document.getElementById('btn-close-info');
+        const btnConfirmInfo = document.getElementById('btn-confirm-info');
+
+        const modalComplete = document.getElementById('modal-complete');
+        const btnRestart = document.getElementById('btn-restart');
+
+        // --- 語音朗讀 (Text-to-Speech) 功能 ---
+        const synth = window.speechSynthesis;
+        let voices = [];
+
+        function initVoices() {
+            if (!synth) return;
+            voices = synth.getVoices();
+            const filtered = voices.filter(v => v.lang.includes('en') || v.lang.includes('zh'));
+            
+            voiceSelect.innerHTML = '<option value="">預設語音</option>';
+            let preferredVoice = '';
+
+            filtered.forEach(v => {
+                const opt = document.createElement('option');
+                opt.value = v.name;
+                opt.textContent = `${v.name} (${v.lang})`;
+                voiceSelect.appendChild(opt);
+
+                const lowerName = v.name.toLowerCase();
+                // 優先選擇 美佳 (Mei-Jia / zh-TW)，次之為 Sandy
+                if (lowerName.includes('meijia') || lowerName.includes('mei-jia') || lowerName.includes('美佳')) {
+                    preferredVoice = v.name;
+                } else if (!preferredVoice && lowerName.includes('sandy')) {
+                    preferredVoice = v.name;
+                }
+            });
+
+            if (preferredVoice) {
+                voiceSelect.value = preferredVoice;
+            }
+
+            if (filtered.length > 0) {
+                voiceSelect.classList.remove('hidden');
+            }
+        }
+
+        if (synth) {
+            initVoices();
+            if (synth.onvoiceschanged !== undefined) {
+                synth.onvoiceschanged = initVoices;
+            }
+        }
+
+        function speak(text) {
+            if (!text || !synth) return;
+            synth.cancel();
+            const utterance = new SpeechSynthesisUtterance(text);
+            const selectedVoiceName = voiceSelect.value;
+            
+            if (selectedVoiceName) {
+                const foundVoice = voices.find(v => v.name === selectedVoiceName);
+                if (foundVoice) utterance.voice = foundVoice;
+            }
+            utterance.rate = 0.95;
+            synth.speak(utterance);
+        }
+
+        // --- CSV Parsing 解析邏輯 ---
+        function parseCSV(text) {
+            const rows = [];
+            let currentRow = [];
+            let currentCell = '';
+            let inQuotes = false;
+
+            // 狀態機解析包含跨列引號 (Quoted Multiline) 的 CSV 檔
+            for (let i = 0; i < text.length; i++) {
+                const char = text[i];
+                const nextChar = text[i + 1];
+
+                if (char === '"') {
+                    if (inQuotes && nextChar === '"') {
+                        currentCell += '"';
+                        i++; // 跳過轉義引號
+                    } else {
+                        inQuotes = !inQuotes;
+                    }
+                } else if (char === ',' && !inQuotes) {
+                    currentRow.push(currentCell);
+                    currentCell = '';
+                } else if ((char === '\r' || char === '\n') && !inQuotes) {
+                    if (char === '\r' && nextChar === '\n') {
+                        i++; // 處理 \r\n 換行
+                    }
+                    currentRow.push(currentCell);
+                    if (currentRow.some(cell => cell.trim() !== '')) {
+                        rows.push(currentRow);
+                    }
+                    currentRow = [];
+                    currentCell = '';
+                } else {
+                    currentCell += char;
+                }
+            }
+            if (currentCell || currentRow.length > 0) {
+                currentRow.push(currentCell);
+                if (currentRow.some(cell => cell.trim() !== '')) {
+                    rows.push(currentRow);
+                }
+            }
+
+            const parsed = [];
+            for (const row of rows) {
+                if (row.length < 2 && row[0] && row[0].includes('\t')) {
+                    const tabParts = row[0].split('\t');
+                    const word = tabParts[0].trim();
+                    const details = tabParts.slice(1).join('\t').trim();
+                    if (word && word.toLowerCase() !== 'word' && word.toLowerCase() !== '單字') {
+                        parsed.push(createCardObject(word, details));
+                    }
+                } else if (row.length >= 2) {
+                    const word = row[0].trim();
+                    const details = row[1].trim();
+                    if (word && word.toLowerCase() !== 'word' && word.toLowerCase() !== '單字') {
+                        parsed.push(createCardObject(word, details));
+                    }
+                }
+            }
+            return parsed;
+        }
+
+        function createCardObject(word, rawDetails) {
+            // 拆分第二欄內容為多行 (包含詞性、中文翻譯、詞性變化、搭配詞與例句)
+            const lines = rawDetails.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+            let exampleSentence = '';
+
+            for (let line of lines) {
+                if (line.includes('[例句]') || line.includes('例句：') || line.toLowerCase().includes('example:')) {
+                    exampleSentence = line.replace(/\[例句\]|例句：|example:/gi, '').trim();
+                }
+            }
+
+            if (!exampleSentence && lines.length > 0) {
+                const lastLine = lines[lines.length - 1];
+                exampleSentence = lastLine.length > 15 ? lastLine : `${word}.`;
+            }
+
+            return {
+                word: word,
+                rawDetails: rawDetails,
+                lines: lines,
+                exampleSentence: exampleSentence
+            };
+        }
+
+        // --- 圖片載入與快取 ---
+        async function fetchCardImage(card) {
+            if (!card) return '';
+            if (imageCache.has(card.word)) {
+                return imageCache.get(card.word);
+            }
+
+            const apiKey = "";
+            const prompt = `Minimalist clear illustration depicting English word '${card.word}'. Context: ${card.exampleSentence || card.rawDetails}`;
+
+            try {
+                if (apiKey) {
+                    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-image:generateContent?key=${apiKey}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [{ parts: [{ text: prompt }] }],
+                            generationConfig: { responseModalities: ['IMAGE'] }
+                        })
+                    });
+                    const data = await res.json();
+                    const base64Data = data?.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
+                    if (base64Data) {
+                        const url = `data:image/png;base64,${base64Data}`;
+                        imageCache.set(card.word, url);
+                        return url;
+                    }
+                }
+            } catch (err) {
+                console.warn("AI Image Fallback triggered:", err);
+            }
+
+            const fallbackUrl = `https://pollinations.ai/p/${encodeURIComponent(card.word + ' illustration icon')}` +
+                                `?width=400&height=220&nologo=true&seed=${card.word.length * 13}`;
+            imageCache.set(card.word, fallbackUrl);
+            return fallbackUrl;
+        }
+
+        function preloadNextImages() {
+            const nextCards = queue.slice(0, 4);
+            nextCards.forEach(c => {
+                if (!imageCache.has(c.word)) {
+                    fetchCardImage(c);
+                }
+            });
+        }
+
+        // --- 渲染卡片介面 ---
+        async function renderCard() {
+            if (queue.length === 0) {
+                showCompletionScreen();
+                return;
+            }
+
+            const current = queue[0];
+
+            frontWord.textContent = current.word;
+
+            backDetails.innerHTML = '';
+            current.lines.forEach(line => {
+                const p = document.createElement('p');
+                p.className = 'text-xs sm:text-sm font-medium tracking-wide';
+
+                if (line.includes('[例句]') || line.includes('例句：')) {
+                    p.className += ' text-emerald-300 font-semibold mt-1 flex items-start justify-between gap-2 bg-emerald-950/40 p-1.5 rounded-lg border border-emerald-800/40';
+                    p.innerHTML = `
+                        <span>${escapeHtml(line)}</span>
+                        <button onclick="event.stopPropagation(); speak('${escapeJsString(current.exampleSentence)}')" class="text-emerald-400 hover:text-emerald-200 p-1 flex-shrink-0" title="朗讀例句">
+                            <i class="fa-solid fa-volume-high"></i>
+                        </button>
+                    `;
+                } else if (line.startsWith('[')) {
+                    p.className += ' text-blue-300';
+                    p.textContent = line;
+                } else {
+                    p.textContent = line;
+                }
+                backDetails.appendChild(p);
+            });
+
+            backImage.classList.add('opacity-0');
+            imageLoader.classList.remove('hidden');
+
+            const imgUrl = await fetchCardImage(current);
+            backImage.src = imgUrl;
+
+            backImage.onload = () => {
+                imageLoader.classList.add('hidden');
+                backImage.classList.remove('opacity-0');
+            };
+            backImage.onerror = () => {
+                imageLoader.classList.add('hidden');
+                backImage.src = `https://placehold.co/400x220/1e293b/94a3b8?text=${encodeURIComponent(current.word)}`;
+                backImage.classList.remove('opacity-0');
+            };
+
+            updateProgress();
+
+            if (isFlipped) {
+                toggleFlip(false);
+            } else {
+                speak(current.word);
+            }
+
+            preloadNextImages();
+        }
+
+        function toggleFlip(forceState) {
+            isFlipped = forceState !== undefined ? forceState : !isFlipped;
+            if (isFlipped) {
+                flashcard.classList.add('rotate-y-180');
+                srsControls.classList.remove('opacity-40', 'pointer-events-none');
+                
+                if (queue[0]) {
+                    speak(queue[0].exampleSentence || queue[0].word);
+                }
+            } else {
+                flashcard.classList.remove('rotate-y-180');
+                srsControls.classList.add('opacity-40', 'pointer-events-none');
+                
+                if (queue[0]) {
+                    speak(queue[0].word);
+                }
+            }
+        }
+
+        // --- SRS 按鈕排程演算法 ---
+        function handleSRS(rating) {
+            if (!isFlipped || queue.length === 0) return;
+
+            const current = queue.shift();
+            stats[rating]++;
+
+            switch (rating) {
+                case 'Again':
+                    if (queue.length >= 1) {
+                        queue.splice(1, 0, current);
+                    } else {
+                        queue.push(current);
+                    }
+                    break;
+                case 'Hard':
+                    const mid = Math.floor(queue.length / 2);
+                    queue.splice(mid, 0, current);
+                    break;
+                case 'Good':
+                    queue.push(current);
+                    break;
+                case 'Easy':
+                    break;
+            }
+
+            renderCard();
+            saveProgress();
+        }
+
+        function updateProgress() {
+            const total = originalCards.length;
+            const remaining = queue.length;
+            
+            if (cardCounter) cardCounter.textContent = `${remaining}/${total}`;
+            const percentage = total > 0 ? ((total - remaining) / total) * 100 : 0;
+            if (progressBar) progressBar.style.width = `${Math.min(100, Math.max(0, percentage))}%`;
+
+            if (statA) statA.textContent = stats.A;
+            if (statH) statH.textContent = stats.H;
+            if (statG) statG.textContent = stats.G;
+            if (statE) statE.textContent = stats.E;
+        }
+
+        function showCompletionScreen() {
+            document.getElementById('summary-A').textContent = stats.A;
+            document.getElementById('summary-H').textContent = stats.H;
+            document.getElementById('summary-G').textContent = stats.G;
+            document.getElementById('summary-E').textContent = stats.E;
+            
+            modalComplete.classList.remove('hidden');
+            clearSavedProgress();
+        }
+
+        function restartPractice() {
+            modalComplete.classList.add('hidden');
+            stats = { A: 0, H: 0, G: 0, E: 0 };
+            queue = [...originalCards];
+            renderCard();
+            saveProgress();
+        }
+
+        // 重新洗牌邏輯 (Fisher-Yates Shuffle)
+        function shuffleQueue() {
+            if (queue.length <= 1) {
+                showToast("剩餘卡片數量不足，無需洗牌");
+                return;
+            }
+            for (let i = queue.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [queue[i], queue[j]] = [queue[j], queue[i]];
+            }
+            showToast("已重新洗牌！");
+            renderCard();
+            saveProgress();
+        }
+
+        function loadCardData(csvText, shouldSave = true) {
+            const parsed = parseCSV(csvText);
+            if (parsed.length > 0) {
+                originalCards = parsed;
+                queue = [...originalCards];
+                stats = { A: 0, H: 0, G: 0, E: 0 };
+                renderCard();
+                if (shouldSave) saveProgress();
+            } else {
+                alert("CSV 解析失敗，請確認內容格式。");
+            }
+        }
+
+        // --- 事件綁定 ---
+        flashcard.addEventListener('click', () => toggleFlip());
+
+        btnSpeakFront.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (queue[0]) speak(queue[0].word);
+        });
+
+        csvFileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (evt) => loadCardData(evt.target.result);
+                reader.readAsText(file);
+            }
+        });
+
+        btnInfo.addEventListener('click', () => modalInfo.classList.remove('hidden'));
+        btnCloseInfo.addEventListener('click', () => modalInfo.classList.add('hidden'));
+        btnConfirmInfo.addEventListener('click', () => modalInfo.classList.add('hidden'));
+
+        btnShuffle.addEventListener('click', shuffleQueue);
+        btnRestart.addEventListener('click', restartPractice);
+
+        // 鍵盤監聽
+        window.addEventListener('keydown', (e) => {
+            if (!modalInfo.classList.contains('hidden') || !modalComplete.classList.contains('hidden')) {
+                if (e.key === 'Escape') {
+                    modalInfo.classList.add('hidden');
+                    modalComplete.classList.add('hidden');
+                }
+                return;
+            }
+
+            if (e.code === 'Space') {
+                e.preventDefault();
+                toggleFlip();
+            } else if (e.code === 'Enter') {
+                e.preventDefault();
+                if (queue[0]) {
+                    if (isFlipped) {
+                        speak(queue[0].exampleSentence || queue[0].word);
+                    } else {
+                        speak(queue[0].word);
+                    }
+                }
+            } else if (isFlipped) {
+                if (e.key === '1') handleSRS('Again');
+                if (e.key === '2') handleSRS('Hard');
+                if (e.key === '3') handleSRS('Good');
+                if (e.key === '4') handleSRS('Easy');
+            }
+        });
+
+        function escapeHtml(str) {
+            return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        }
+        function escapeJsString(str) {
+            return str.replace(/'/g, "\\'").replace(/"/g, '\\"');
+        }
+
+        // 匯出至全域 window 物件以供 inline onclick 事件執行
+        window.handleSRS = handleSRS;
+        window.speak = speak;
+        window.restartPractice = restartPractice;
+
+        // --- PWA (Progressive Web App) 動態 Manifest 與安裝服務 ---
+        function initPWA() {
+            // 1. 動態注入 Manifest JSON 規格
+            const manifestData = {
+                name: "SRS 單字學習卡 App",
+                short_name: "SRS單字卡",
+                start_url: "./",
+                display: "standalone",
+                background_color: "#0f172a",
+                theme_color: "#0f172a",
+                description: "具備 SRS 間隔重複系統與 AI 圖像聯想的單字學習卡",
+                icons: [
+                    {
+                        src: "https://cdn-icons-png.flaticon.com/512/3389/3389081.png",
+                        sizes: "512x512",
+                        type: "image/png",
+                        purpose: "any maskable"
+                    }
+                ]
+            };
+            const stringManifest = JSON.stringify(manifestData);
+            const blob = new Blob([stringManifest], { type: 'application/json' });
+            const manifestURL = URL.createObjectURL(blob);
+            const manifestPlaceholder = document.getElementById('manifest-placeholder');
+            if (manifestPlaceholder) manifestPlaceholder.setAttribute('href', manifestURL);
+
+            // 2. 安裝按鈕事件處理 (Android / Chrome)
+            let deferredPrompt = null;
+            const btnInstall = document.getElementById('btn-install');
+
+            window.addEventListener('beforeinstallprompt', (e) => {
+                e.preventDefault();
+                deferredPrompt = e;
+                if (btnInstall) btnInstall.classList.remove('hidden');
+            });
+
+            if (btnInstall) {
+                btnInstall.addEventListener('click', async () => {
+                    if (!deferredPrompt) return;
+                    deferredPrompt.prompt();
+                    const { outcome } = await deferredPrompt.userChoice;
+                    if (outcome === 'accepted') {
+                        btnInstall.classList.add('hidden');
+                    }
+                    deferredPrompt = null;
+                });
+            }
+        }
+
+        initPWA();
+
+        // 啟動應用程式並檢查有無存檔
+        async function initApp() {
+            const restored = await initFirebase();
+            if (!restored) {
+                loadCardData(defaultCSVData, false);
+            }
+        }
+
+        initApp();
+    </script>
+</body>
+</html>
